@@ -55,7 +55,6 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
-            syscall_times: [0; MAX_SYSCALL_NUM],
             time: 0,
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
@@ -73,6 +72,14 @@ lazy_static! {
         }
     };
 }
+
+lazy_static! {
+    /// Global variable: TASK_SYSCALL_TIMES
+    pub static ref TASK_SYSCALL_TIMES: UPSafeCell<[[u32;MAX_SYSCALL_NUM];MAX_APP_NUM]> = {
+        unsafe {  UPSafeCell::new([[0u32;MAX_SYSCALL_NUM];MAX_APP_NUM]) }
+    };
+}
+
 
 impl TaskManager {
     /// Run the first task in task list.
@@ -192,14 +199,14 @@ pub fn get_current_task_status() -> TaskStatus {
 /// Get the current task's status
 pub fn get_current_task_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
     let inner = TASK_MANAGER.inner.exclusive_access();
-    inner.tasks[inner.current_task].syscall_times
+    TASK_SYSCALL_TIMES.exclusive_access()[inner.current_task]
 }
 
 /// Add the current task's syscall times
 pub fn add_current_task_syscall_times(syscall_id: usize) {
-    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let inner = TASK_MANAGER.inner.exclusive_access();
     let current = inner.current_task;
-    inner.tasks[current].syscall_times[syscall_id] += 1;
+    TASK_SYSCALL_TIMES.exclusive_access()[current][syscall_id] += 1;
 }
 
 /// Get the current task's running time
