@@ -63,6 +63,35 @@ impl MemorySet {
             None,
         );
     }
+    
+    /// vpn range is mapped
+    pub fn vpn_range_is_mapped(&self, range: (VirtPageNum, VirtPageNum)) -> bool {
+        for area in self.areas.iter() {
+            // foreach range
+            let start = range.0 .0;
+            let end = range.1 .0;
+            if (start..end).any(|vpn| area.data_frames.contains_key(&VirtPageNum(vpn))) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// vpn range unmapped
+    pub fn vpn_range_unmap(&mut self, range: (VirtPageNum, VirtPageNum)) -> bool {
+        let index = self.areas.iter().position(|area| {
+            area.vpn_range.get_start() == range.0 && area.vpn_range.get_end() == range.1
+        });
+
+        if index.is_none() {
+            return false;
+        }
+
+        let mut area = self.areas.remove(index.unwrap());
+        area.unmap(&mut self.page_table);
+        true
+    }
+
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {

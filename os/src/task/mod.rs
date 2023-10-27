@@ -14,8 +14,11 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::MapPermission;
 use crate::sync::UPSafeCell;
+use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
 use lazy_static::*;
@@ -70,6 +73,18 @@ lazy_static! {
     };
 }
 
+lazy_static! {
+    /// Global variable: TASK_SYSCALL_TIMES
+    pub static ref TASK_SYSCALL_TIMES: UPSafeCell<Vec<[u32;MAX_SYSCALL_NUM]>> = {
+        let num_app = get_num_app();
+        let mut tasks: Vec<[u32;MAX_SYSCALL_NUM]> = Vec::new();
+        for _ in 0..num_app {
+            tasks.push([0u32;MAX_SYSCALL_NUM]);
+        }
+        unsafe {  UPSafeCell::new(tasks) }
+    };
+}
+
 impl TaskManager {
     /// Run the first task in task list.
     ///
@@ -79,6 +94,7 @@ impl TaskManager {
         let mut inner = self.inner.exclusive_access();
         let next_task = &mut inner.tasks[0];
         next_task.task_status = TaskStatus::Running;
+        next_task.time = get_time_ms();
         let next_task_cx_ptr = &next_task.task_cx as *const TaskContext;
         drop(inner);
         let mut _unused = TaskContext::zero_init();
@@ -140,6 +156,9 @@ impl TaskManager {
             let mut inner = self.inner.exclusive_access();
             let current = inner.current_task;
             inner.tasks[next].task_status = TaskStatus::Running;
+            if inner.tasks[next].time == 0 {
+                inner.tasks[next].time = get_time_ms();
+            }
             inner.current_task = next;
             let current_task_cx_ptr = &mut inner.tasks[current].task_cx as *mut TaskContext;
             let next_task_cx_ptr = &inner.tasks[next].task_cx as *const TaskContext;
@@ -201,4 +220,83 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// Get the current task's status
+pub fn get_current_task_status() -> TaskStatus {
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    inner.tasks[inner.current_task].task_status
+}
+
+/// Get the current task's status
+pub fn get_current_task_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    TASK_SYSCALL_TIMES.exclusive_access()[inner.current_task]
+}
+
+/// Add the current task's syscall times
+pub fn add_current_task_syscall_times(syscall_id: usize) {
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task;
+    TASK_SYSCALL_TIMES.exclusive_access()[current][syscall_id] += 1;
+}
+
+/// Get the current task's running time
+pub fn get_current_task_time() -> usize {
+    let inner = TASK_MANAGER.inner.exclusive_access();
+    inner.tasks[inner.current_task].time
+}
+
+/// current task mmap
+pub fn current_task_mmmap(_start: usize, _len: usize, _port: usize) -> bool {
+    if _port & !0x7 != 0 {
+        return false;
+    }
+    if _port & 0x7 == 0 {
+        return false;
+    }
+    if _start & 0xfff != 0 {
+        return false;
+    }
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task;
+    let start_va = crate::mm::VirtAddr(_start as usize);
+    let start_vpn = start_va.floor();
+    let end_va = crate::mm::VirtAddr((_start + _len) as usize);
+    let end_vpn = end_va.ceil();
+    if inner.tasks[current]
+        .memory_set
+        .vpn_range_is_mapped((start_vpn, end_vpn))
+    {
+        return false;
+    }
+    debug!("_port = {}, {}", _port, _port as u8 & 0b111);
+    let permission = {
+        let flag: u8 = ((_port as u8) << 1) | 0b10000;
+        debug!("flag = {}", flag);
+        MapPermission::from_bits(flag).unwrap()
+    };
+    inner.tasks[current]
+        .memory_set
+        .insert_framed_area(start_va, end_va, permission);
+    true
+}
+
+/// current task unmmap
+pub fn current_task_unmmap(_start: usize, _len: usize) -> bool {
+    let mut inner = TASK_MANAGER.inner.exclusive_access();
+    let current = inner.current_task;
+    let start_va = crate::mm::VirtAddr(_start as usize);
+    let start_vpn = start_va.floor();
+    let end_va = crate::mm::VirtAddr((_start + _len) as usize);
+    let end_vpn = end_va.ceil();
+    if !inner.tasks[current]
+        .memory_set
+        .vpn_range_is_mapped((start_vpn, end_vpn))
+    {
+        return false;
+    }
+    inner.tasks[current]
+        .memory_set
+        .vpn_range_unmap((start_vpn, end_vpn))
 }
