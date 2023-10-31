@@ -10,6 +10,7 @@ use spin::{Mutex, MutexGuard};
 pub struct Inode {
     block_id: usize,
     block_offset: usize,
+    /// inode id
     pub inode_id: u32,
     fs: Arc<Mutex<EasyFileSystem>>,
     block_device: Arc<dyn BlockDevice>,
@@ -152,11 +153,14 @@ impl Inode {
                     if dirent.inode_id() == inode_id {
                         // clear dirent
                         let mut last_dirent = DirEntry::empty();
-                        root_inode.read_at(
-                            (file_count - 1) * DIRENT_SZ,
-                            last_dirent.as_bytes_mut(),
-                            &self.block_device,
-                        );
+                        if i * DIRENT_SZ != (file_count - 1) * DIRENT_SZ {
+                            root_inode.read_at(
+                                (file_count - 1) * DIRENT_SZ,
+                                last_dirent.as_bytes_mut(),
+                                &self.block_device,
+                            );
+                        }
+                      
                         root_inode.write_at(
                             i * DIRENT_SZ,
                             last_dirent.as_bytes(),
@@ -172,6 +176,7 @@ impl Inode {
                     }
                 }
             });
+             block_cache_sync_all();
             true
         } else {
             false

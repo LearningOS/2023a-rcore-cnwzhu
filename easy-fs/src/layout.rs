@@ -98,7 +98,7 @@ impl DiskInode {
         self.indirect1 = 0;
         self.indirect2 = 0;
         self.type_ = type_;
-        self.link_count = 0;
+        self.link_count = 1;
     }
     /// Whether this inode is a directory
     pub fn is_dir(&self) -> bool {

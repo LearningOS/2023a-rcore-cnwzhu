@@ -1,5 +1,4 @@
 //! File and filesystem-related syscalls
-use core::any::Any;
 
 use crate::fs::{open_file, OpenFlags, Stat, OSInode};
 use crate::mm::{translated_byte_buffer, translated_str, UserBuffer, translated_refmut};
@@ -80,25 +79,19 @@ pub fn sys_close(fd: usize) -> isize {
 /// YOUR JOB: Implement fstat.
 pub fn sys_fstat(_fd: usize, _st: *mut Stat) -> isize {
     trace!(
-        "kernel:pid[{}] sys_fstat NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_fstat IMPLEMENTED",
         current_task().unwrap().pid.0
     );
     let token = current_user_token();
     let stat = translated_refmut(token, _st);
     let task = current_task().unwrap();
-    let f = task.inner_exclusive_access().fd_table.get(_fd);
-    if f.is_none() {
-        return -1;
-    }
-    let f = f.unwrap();
-    if f.is_none() {
-        return -1;
-    }
-    let f = (&f.unwrap() as &dyn Any).downcast_ref::<OSInode>();
-    if f.is_none() {
-        return -1;
-    }
-    *stat = crate::fs::stat(f.unwrap());
+    let task_inner = task.inner_exclusive_access();
+      task_inner.fd_table.get(_fd).map(|arc|{
+        let arc = arc.clone().unwrap();
+        arc.as_any().downcast_ref::<OSInode>().map(|inode|{
+            *stat = crate::fs::stat(inode);
+        })
+      });
     0
 }
 

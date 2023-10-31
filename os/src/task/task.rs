@@ -62,6 +62,12 @@ pub struct TaskControlBlockInner {
     /// A vector containing TCBs of all child processes of the current process
     pub children: Vec<Arc<TaskControlBlock>>,
 
+    /// The number of times the system call is executed
+    pub syscall_times: [u32; crate::config::MAX_SYSCALL_NUM],
+
+    /// first time to schedule
+    pub time: usize,
+
     /// It is set when active exit or execution error occurs
     pub exit_code: i32,
     pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
@@ -71,6 +77,12 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    /// stride
+    pub stride: usize,
+
+    /// pirority
+    pub pirority: usize,
 }
 
 impl TaskControlBlockInner {
@@ -124,6 +136,8 @@ impl TaskControlBlock {
                     memory_set,
                     parent: None,
                     children: Vec::new(),
+                    syscall_times: [0; crate::config::MAX_SYSCALL_NUM],
+                    time: 0,
                     exit_code: 0,
                     fd_table: vec![
                         // 0 -> stdin
@@ -135,6 +149,8 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    stride: 0,
+                    pirority: 16,
                 })
             },
         };
@@ -212,10 +228,14 @@ impl TaskControlBlock {
                     memory_set,
                     parent: Some(Arc::downgrade(self)),
                     children: Vec::new(),
+                    syscall_times: [0; crate::config::MAX_SYSCALL_NUM],
+                    time: 0,
                     exit_code: 0,
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    stride: 0,
+                    pirority: 16,
                 })
             },
         });

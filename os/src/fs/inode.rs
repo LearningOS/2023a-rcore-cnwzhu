@@ -8,6 +8,7 @@ use super::{File, Stat, StatMode};
 use crate::drivers::BLOCK_DEVICE;
 use crate::mm::UserBuffer;
 use crate::sync::UPSafeCell;
+use _core::any::Any;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::*;
@@ -53,6 +54,7 @@ impl OSInode {
         v
     }
 
+    /// get inode
     pub fn get_inode(&self) -> Arc<Inode> {
         let inner = self.inner.exclusive_access();
         inner.inode.clone()
@@ -139,6 +141,7 @@ pub fn unlinkat(name: &str) -> bool {
     ROOT_INODE.unlink(name)
 }
 
+/// Get file stat
 pub fn stat(node: &OSInode) -> Stat {
     let inner = node.get_inode();
     let ret = inner.stat();
@@ -187,5 +190,9 @@ impl File for OSInode {
             total_write_size += write_size;
         }
         total_write_size
+    }
+    
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
