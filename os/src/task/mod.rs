@@ -21,7 +21,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::loader::get_app_data_by_name;
+use crate::{loader::get_app_data_by_name, mm::MapPermission};
 use alloc::sync::Arc;
 use lazy_static::*;
 pub use manager::{fetch_task, TaskManager};
@@ -56,6 +56,9 @@ pub fn suspend_current_and_run_next() {
 
 /// pid of usertests app in make run TEST=1
 pub const IDLE_PID: usize = 0;
+
+/// const for stride scheduling
+pub const BIG_STRIDE : usize = 1000;
 
 /// Exit the current 'Running' task and run the next task in task list.
 pub fn exit_current_and_run_next(exit_code: i32) {
@@ -114,4 +117,51 @@ lazy_static! {
 ///Add init process to the manager
 pub fn add_initproc() {
     add_task(INITPROC.clone());
+}
+
+/// current task mmap
+pub fn current_task_mmmap(_start: usize, _len: usize, _port: usize) -> bool {
+    if _port & !0x7 != 0 {
+        return false;
+    }
+    if _port & 0x7 == 0 {
+        return false;
+    }
+    if _start & 0xfff != 0 {
+        return false;
+    }
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+
+    let start_va = crate::mm::VirtAddr(_start as usize);
+    let start_vpn = start_va.floor();
+    let end_va = crate::mm::VirtAddr((_start + _len) as usize);
+    let end_vpn = end_va.ceil();
+    if inner.memory_set.vpn_range_is_mapped((start_vpn, end_vpn)) {
+        return false;
+    }
+    debug!("_port = {}, {}", _port, _port as u8 & 0b111);
+    let permission = {
+        let flag: u8 = ((_port as u8) << 1) | 0b10000;
+        debug!("flag = {}", flag);
+        MapPermission::from_bits(flag).unwrap()
+    };
+    inner
+        .memory_set
+        .insert_framed_area(start_va, end_va, permission);
+    true
+}
+
+/// current task unmmap
+pub fn current_task_unmmap(_start: usize, _len: usize) -> bool {
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    let start_va = crate::mm::VirtAddr(_start as usize);
+    let start_vpn = start_va.floor();
+    let end_va = crate::mm::VirtAddr((_start + _len) as usize);
+    let end_vpn = end_va.ceil();
+    if !inner.memory_set.vpn_range_is_mapped((start_vpn, end_vpn)) {
+        return false;
+    }
+    inner.memory_set.vpn_range_unmap((start_vpn, end_vpn))
 }
