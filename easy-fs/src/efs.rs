@@ -130,6 +130,21 @@ impl EasyFileSystem {
         self.inode_bitmap.alloc(&self.block_device).unwrap() as u32
     }
 
+    /// Deallocate an inode
+    pub fn dealloc_inode(&mut self, inode_id: u32) {
+        let (block_id, block_offset) = self.get_disk_inode_pos(inode_id);
+        get_block_cache(block_id as usize, Arc::clone(&self.block_device))
+            .lock()
+            .modify(block_offset, |disk_inode: &mut DiskInode| {
+               let data_blocks_dealloc = disk_inode.clear_size(&self.block_device);
+                for data_block in data_blocks_dealloc.into_iter() {
+                    self.dealloc_data(data_block);
+                }
+            });
+        self.inode_bitmap
+            .dealloc(&self.block_device, inode_id as usize)
+    }
+
     /// Allocate a data block
     pub fn alloc_data(&mut self) -> u32 {
         self.data_bitmap.alloc(&self.block_device).unwrap() as u32 + self.data_area_start_block

@@ -10,4 +10,13 @@
     // "rust-analyzer.cargo.features": [
     //     "board_qemu"
     // ]
+    "terminal.integrated.profiles.linux": {
+        "bash": {
+            "path": "/usr/bin/bash",
+            "args": [
+                "-i"
+            ]
+        }
+    },
+    "terminal.integrated.defaultProfile.linux": "bash"
 }
