@@ -4,7 +4,7 @@
 //!
 //! `UPSafeCell<OSInodeInner>` -> `OSInode`: for static `ROOT_INODE`,we
 //! need to wrap `OSInodeInner` into `UPSafeCell`
-use super::File;
+use super::{File, Stat, StatMode};
 use crate::drivers::BLOCK_DEVICE;
 use crate::mm::UserBuffer;
 use crate::sync::UPSafeCell;
@@ -51,6 +51,11 @@ impl OSInode {
             v.extend_from_slice(&buffer[..len]);
         }
         v
+    }
+
+    pub fn get_inode(&self) -> Arc<Inode> {
+        let inner = self.inner.exclusive_access();
+        inner.inode.clone()
     }
 }
 
@@ -132,6 +137,24 @@ pub fn linkat(old_name: &str, new_name: &str) -> bool {
 /// Delete a name and possibly the file it refers to
 pub fn unlinkat(name: &str) -> bool {
     ROOT_INODE.unlink(name)
+}
+
+pub fn stat(node: &OSInode) -> Stat {
+    let inner = node.get_inode();
+    let ret = inner.stat();
+     Stat {
+        dev: 0,
+        ino: inner.inode_id as u64,
+        mode: {
+            if ret.1 == 2 {
+                StatMode::FILE
+            } else {
+                StatMode::DIR
+            }
+        },
+        nlink: ret.0,
+        pad: [0; 7],
+    }
 }
 
 impl File for OSInode {

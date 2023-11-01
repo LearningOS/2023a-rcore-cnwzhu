@@ -1,6 +1,8 @@
 //! File and filesystem-related syscalls
-use crate::fs::{open_file, OpenFlags, Stat};
-use crate::mm::{translated_byte_buffer, translated_str, UserBuffer};
+use core::any::Any;
+
+use crate::fs::{open_file, OpenFlags, Stat, OSInode};
+use crate::mm::{translated_byte_buffer, translated_str, UserBuffer, translated_refmut};
 use crate::task::{current_task, current_user_token};
 
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
@@ -53,7 +55,7 @@ pub fn sys_open(path: *const u8, flags: u32) -> isize {
     let path = translated_str(token, path);
     if let Some(inode) = open_file(path.as_str(), OpenFlags::from_bits(flags).unwrap()) {
         let mut inner = task.inner_exclusive_access();
-        let fd = inner.alloc_fd();
+        let fd: usize = inner.alloc_fd();
         inner.fd_table[fd] = Some(inode);
         fd as isize
     } else {
@@ -81,7 +83,23 @@ pub fn sys_fstat(_fd: usize, _st: *mut Stat) -> isize {
         "kernel:pid[{}] sys_fstat NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let token = current_user_token();
+    let stat = translated_refmut(token, _st);
+    let task = current_task().unwrap();
+    let f = task.inner_exclusive_access().fd_table.get(_fd);
+    if f.is_none() {
+        return -1;
+    }
+    let f = f.unwrap();
+    if f.is_none() {
+        return -1;
+    }
+    let f = (&f.unwrap() as &dyn Any).downcast_ref::<OSInode>();
+    if f.is_none() {
+        return -1;
+    }
+    *stat = crate::fs::stat(f.unwrap());
+    0
 }
 
 /// YOUR JOB: Implement linkat.

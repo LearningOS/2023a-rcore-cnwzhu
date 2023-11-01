@@ -10,6 +10,7 @@ use spin::{Mutex, MutexGuard};
 pub struct Inode {
     block_id: usize,
     block_offset: usize,
+    pub inode_id: u32,
     fs: Arc<Mutex<EasyFileSystem>>,
     block_device: Arc<dyn BlockDevice>,
 }
@@ -19,12 +20,14 @@ impl Inode {
     pub fn new(
         block_id: u32,
         block_offset: usize,
+        inode_id: u32,
         fs: Arc<Mutex<EasyFileSystem>>,
         block_device: Arc<dyn BlockDevice>,
     ) -> Self {
         Self {
             block_id: block_id as usize,
             block_offset,
+            inode_id,
             fs,
             block_device,
         }
@@ -67,6 +70,7 @@ impl Inode {
                 Arc::new(Self::new(
                     block_id,
                     block_offset,
+                    inode_id,
                     self.fs.clone(),
                     self.block_device.clone(),
                 ))
@@ -85,6 +89,7 @@ impl Inode {
                     Arc::new(Self::new(
                         block_id,
                         block_offset,
+                        inode_id,
                         self.fs.clone(),
                         self.block_device.clone(),
                     )),
@@ -125,6 +130,7 @@ impl Inode {
                     Arc::new(Self::new(
                         block_id,
                         block_offset,
+                        inode_id,
                         self.fs.clone(),
                         self.block_device.clone(),
                     )),
@@ -145,13 +151,23 @@ impl Inode {
                     root_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device);
                     if dirent.inode_id() == inode_id {
                         // clear dirent
-                        let last_dirent = DirEntry::empty();
+                        let mut last_dirent = DirEntry::empty();
+                        root_inode.read_at(
+                            (file_count - 1) * DIRENT_SZ,
+                            last_dirent.as_bytes_mut(),
+                            &self.block_device,
+                        );
                         root_inode.write_at(
                             i * DIRENT_SZ,
                             last_dirent.as_bytes(),
                             &self.block_device,
                         );
-                        // todo
+                        root_inode.write_at(
+                            (file_count - 1) * DIRENT_SZ,
+                            DirEntry::empty().as_bytes(),
+                            &self.block_device,
+                        );
+                        root_inode.size -= DIRENT_SZ as u32;
                         break;
                     }
                 }
@@ -160,6 +176,18 @@ impl Inode {
         } else {
             false
         }
+    }
+
+    /// Stat a file under current inode by name
+    pub fn stat(&self) -> (u32, u32) {
+        self.read_disk_inode(|disk_inode| {
+            (disk_inode.link_count, {
+                match disk_inode.type_ {
+                    DiskInodeType::Directory => 1,
+                    DiskInodeType::File => 2,
+                }
+            })
+        })
     }
 
     /// Increase the size of a disk inode
@@ -222,6 +250,7 @@ impl Inode {
         Some(Arc::new(Self::new(
             block_id,
             block_offset,
+            new_inode_id,
             self.fs.clone(),
             self.block_device.clone(),
         )))
