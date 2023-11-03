@@ -123,26 +123,23 @@ impl Inode {
     /// Unlink a file under current inode by name
     pub fn unlink(&self, name: &str) -> bool {
         let mut fs = self.fs.lock();
-        if let Some((inode_id, node)) = self.read_disk_inode(|disk_inode| {
+        if let Some(node) = self.read_disk_inode(|disk_inode| {
             self.find_inode_id(name, disk_inode).map(|inode_id| {
                 let (block_id, block_offset) = fs.get_disk_inode_pos(inode_id);
-                (
+                Arc::new(Self::new(
+                    block_id,
+                    block_offset,
                     inode_id,
-                    Arc::new(Self::new(
-                        block_id,
-                        block_offset,
-                        inode_id,
-                        self.fs.clone(),
-                        self.block_device.clone(),
-                    )),
-                )
+                    self.fs.clone(),
+                    self.block_device.clone(),
+                ))
             })
         }) {
             node.modify_disk_inode(|disk_inode| {
                 if disk_inode.link_count > 1 {
                     disk_inode.link_count -= 1;
                 } else {
-                    fs.dealloc_inode(inode_id);
+                    fs.dealloc_inode(node.inode_id);
                 }
             });
             self.modify_disk_inode(|root_inode| {
@@ -150,7 +147,7 @@ impl Inode {
                 for i in 0..file_count {
                     let mut dirent = DirEntry::empty();
                     root_inode.read_at(i * DIRENT_SZ, dirent.as_bytes_mut(), &self.block_device);
-                    if dirent.inode_id() == inode_id {
+                    if dirent.name() == name {
                         // clear dirent
                         let mut last_dirent = DirEntry::empty();
                         if i * DIRENT_SZ != (file_count - 1) * DIRENT_SZ {
@@ -160,7 +157,6 @@ impl Inode {
                                 &self.block_device,
                             );
                         }
-                      
                         root_inode.write_at(
                             i * DIRENT_SZ,
                             last_dirent.as_bytes(),
@@ -176,7 +172,7 @@ impl Inode {
                     }
                 }
             });
-             block_cache_sync_all();
+            block_cache_sync_all();
             true
         } else {
             false

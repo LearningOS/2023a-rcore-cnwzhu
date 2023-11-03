@@ -87,7 +87,7 @@ pub fn sys_fstat(_fd: usize, _st: *mut Stat) -> isize {
     let task = current_task().unwrap();
     let task_inner = task.inner_exclusive_access();
       task_inner.fd_table.get(_fd).map(|arc|{
-        let arc = arc.clone().unwrap();
+        let arc = arc.as_deref().unwrap();
         arc.as_any().downcast_ref::<OSInode>().map(|inode|{
             *stat = crate::fs::stat(inode);
         })
