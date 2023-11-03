@@ -122,7 +122,7 @@ impl Inode {
 
     /// Unlink a file under current inode by name
     pub fn unlink(&self, name: &str) -> bool {
-        let mut fs = self.fs.lock();
+        let fs = self.fs.lock();
         if let Some(node) = self.read_disk_inode(|disk_inode| {
             self.find_inode_id(name, disk_inode).map(|inode_id| {
                 let (block_id, block_offset) = fs.get_disk_inode_pos(inode_id);
