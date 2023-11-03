@@ -136,11 +136,7 @@ impl Inode {
             })
         }) {
             node.modify_disk_inode(|disk_inode| {
-                if disk_inode.link_count > 1 {
-                    disk_inode.link_count -= 1;
-                } else {
-                    fs.dealloc_inode(node.inode_id);
-                }
+                disk_inode.link_count -= 1;
             });
             self.modify_disk_inode(|root_inode| {
                 let file_count = (root_inode.size as usize) / DIRENT_SZ;
